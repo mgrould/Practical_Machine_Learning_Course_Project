@@ -1,0 +1,116 @@
+# Practical Machine Learning: Course Project
+# Prediction Assignment Writeup
+
+Author: Marion Grould
+
+Date: 18 January, 2018
+
+## Synopsis
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Concretely, the aim of this project is to predict the manner in which they did the exercise. This is the *classe* variable in the training set. We may use any of the other variables to predict with.
+
+## Sources
+
+The whole data used for this project are available here: [http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har)
+
+The data used to train and test the model are given here: [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The testing set used to answer the quiz are given here: [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+This work is inspired by the study perfomed by [http://web.archive.org/web/20161125212224/http://groupware.les.inf.puc-rio.br:80/work.jsf?p1=10335](Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements)
+
+## Data Loading & Exploratory
+
+We first download and load the data from internet,
+
+```{r load, cache = TRUE}
+fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(fileUrl, destfile = "pml-training.csv")
+data <- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!",""))
+```
+
+and explore a little bit the data:
+
+```{r explore, cache = TRUE}
+dim(data)
+names(data[,1:10])
+sum(is.na(data))
+```
+
+There are 19622 rows and 160 columns, the first seven columns are not useful for the prediction since they correspond to ID, time-stamp and window data. We also note that there are a huge number of missing values. We thus define a cleaning data set by removing the unnecessary columns and by removing the columns containing more than 95% of missing values:
+
+```{r clean, cache = TRUE}
+newdata <- data[,-1:-7]
+ColRate <- round(apply(newdata, 2, function(x) sum(is.na(x))) / dim(newdata)[1] * 100, 0)
+table(ColRate)
+newdata <- newdata[,ColRate<95]
+dim(newdata)
+```
+
+From the above table, we note that there are 53 columns without missing values and 100 columns wich contain more than 97% of missing values. Thus, there are no NA in the new data set.
+
+Let us now split it in a training and a testing set, necessary to build the prediction model:
+
+```{r split, cache = TRUE}
+library(caret)
+set.seed(1234)
+inTrain <- createDataPartition(y = newdata$classe, p = 0.7, list = FALSE) 
+training <- newdata[inTrain, ]
+testing <- newdata[-inTrain, ] 
+```
+
+## Model Building
+
+Since the data in the training set are already labelled, we use a supervised machine learning method to build our model and predict the classes from the testing test. To build a robust model by using the training set we use cross-validation: the original training set is splitted in a second training and testing set and the model selection is done by using the testing set. More precisely, we use the K-fold method for the cross-validation by using the trainControl() function, and we set K to 3:
+
+```{r CV, cache = TRUE}
+trainC <- trainControl(method = "cv", number = 3)
+```
+
+To build the model we choose the Random Forest algorithm since it is one of the most accurate method:
+
+```{r train, cache = TRUE, results='hide', message=FALSE, warning=FALSE}
+RF <- train(classe ~ ., data = training, method = "rf", trControl = trainC, ntree = 200)
+```
+
+```{r result, cache = TRUE}
+RF
+```
+
+## Model Testing
+
+We now test the accuracy of the model obtained by using both the cross-validation and the Random Forest methods, on the testing set:
+
+```{r test, cache = TRUE}
+predRF <- predict(RF, testing)
+confusionMatrix(testing$classe, predRF)
+```
+
+As showed, the accuracy of the model is very satisfactory since it reaches 99% and the out-of-sample error reaches 0.56% (1 minus the accuracy).
+
+## Predictions (Quiz 4)
+
+Since the model is very accurate, we can perform predictions on the testing test provided from internet. Let us load it and do some cleaning:
+
+```{r load testing, cache = TRUE}
+fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileUrl, destfile = "pml-testing.csv")
+data2 <- read.csv("pml-testing.csv", na.strings=c("NA","#DIV/0!",""))
+newtesting <- data2[,-1:-7]
+ColRate <- round(apply(newtesting, 2, function(x) sum(is.na(x))) / dim(newtesting)[1] * 100, 0)
+newtesting <- newtesting[,ColRate<95]
+```
+
+Let us now perform the predictions of each *problem_id* (1 to 20) of the new testing set:
+
+```{r pred_quiz, cache = TRUE}
+n <- length(newtesting$problem_id)
+for (i in 1:n){
+    IndRow <- newtesting$problem_id == i
+    predRF <- predict(RF, newtesting[IndRow,-53])
+    print(paste0("The predicted classe for the case ", i, " is: ", as.character(predRF)))
+}
+```
+
